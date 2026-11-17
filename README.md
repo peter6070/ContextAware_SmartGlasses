@@ -32,17 +32,17 @@ MediaPipe Hand Landmarker의 호환되는 모델 파일을 준비한 뒤 다음�
 ```powershell
 python -m software.main --stream http://<ESP32주소>:81/stream --model <모델파일경로>
 ```
-기본적으로 명령은 출력만 합니다. `--serial COM포트`를 추가하면 115200 baud로 줄바꿈 명령을 보냅니다. Arduino 수신 및 조명·서보·팬 제어 코드는 작성했으나 실장치 검증 전이며 출력은 기본적으로 비활성화되어 있습니다. ESP32 영상 코드도 후보 핀 배치를 사용하므로 보드 확인이 필요합니다.
+기본적으로 명령은 출력만 합니다. `--serial COM포트`를 추가하면 115200 baud로 줄바꿈 명령을 보냅니다. Arduino 수신 및 조명·커튼 서보·팬 스텝모터 제어 코드는 작성했으나 변경된 코드의 실장치 동작은 검증 전입니다. ESP32 영상 코드도 후보 핀 배치를 사용하므로 보드 확인이 필요합니다.
 
 ## 하드웨어 시제품 설정
 보내주신 상품과 동일한 보드인지 아직 확인되지 않았습니다. ESP32 코드는 [Freenove ESP32-S3 WROOM 카메라 예제](https://github.com/Freenove/Freenove_ESP32_S3_WROOM_Board/blob/main/C/Sketches/Sketch_07.2_As_VideoWebServer/Sketch_07.2_As_VideoWebServer.ino)의 ESP32S3_EYE 핀 배치를 후보로 사용합니다. 실제 보드가 일치하는지 확인한 후 `firmware/esp32_cam/wifi_secrets.example.h`를 같은 폴더에 `wifi_secrets.h`로 복사하고 Wi-Fi 정보를 입력한 뒤 확인 매크로의 주석을 해제합니다. ESP32-S3용 Arduino 보드 패키지와 보드에 맞는 설정이 필요합니다. 업로드 후 시리얼 모니터 115200 baud에서 출력된 스트림 주소를 PC에 입력합니다. 인증 정보 파일은 Git에서 제외됩니다.
 
-Arduino 코드의 임시 신호 핀은 RGB R/G/B가 D3/D5/D6, 서보 신호가 D9입니다. 이 값은 부품 모델을 확인해 확정한 배선이 아닙니다. RGB 공통 단자 유형, 모듈 극성 및 각 채널의 전류 제한 저항, 서보 전압·전류와 별도 전원 공급 및 공통 접지, 안전한 동작 각도를 확인해야 합니다. 그 후 `OUTPUTS_CONFIRMED`, `RGB_ACTIVE_HIGH`, 서보 각도를 실제 장치에 맞게 조정합니다. 서보 모터를 GPIO에서 전원 공급하지 않습니다.
+초록색 LED는 D3, 팬용 28BYJ-48 스텝모터 드라이버의 IN1~IN4는 D10~D13에 연결했습니다. 커튼 서보 신호는 D9로 계획하며 실제 배선은 확인이 필요합니다. LED 극성과 전류 제한, 모터 전원과 공통 접지는 실물 확인이 필요합니다. `LIGHT_ACTIVE_HIGH`와 서보의 열림·닫힘 각도는 시험용 설정입니다. 서보를 기구에 연결하기 전 방향과 이동 범위를 확인하세요.
 
 MediaPipe 모델은 [공식 Hand Landmarker 안내](https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker/python)에서 내려받습니다. 실제 입력 영상에서 제스처 정확도와 오작동은 검증되지 않았으며, 실물 배선과 영상 수신도 아직 시험하지 않았습니다.
 
 ## 팬과 LCD 시제품
-- FAN 신호 핀은 D8 후보입니다. DC 모터를 UNO 핀에 직접 연결하지 말고 정격에 맞는 모터 드라이버 또는 스위칭 회로와 보호 소자, 전원 및 공통 접지를 확인합니다. 구동 회로의 입력 극성을 확인한 뒤 `FAN_ACTIVE_HIGH`를 설정하고 `FAN_DRIVER_CONFIRMED`를 활성화합니다. 기본값은 비활성화입니다. 속도 조절은 미구현입니다.
+- FAN은 ULN2003 드라이버의 IN1~IN4와 D10~D13으로 28BYJ-48 스텝모터를 구동합니다. 모터용 5V 전원과 공통 접지를 확인합니다. 속도 조절은 미구현입니다.
 - LCD는 HD44780 호환 16×2 I2C 문자 LCD를 **가정**합니다. Arduino IDE 라이브러리 관리자에서 [hd44780 라이브러리](https://github.com/duinoWitchery/hd44780)를 설치합니다. 실제 LCD 모델·전압·크기와 호환되는 I2C 백팩을 확인한 후 `LCD_CONFIRMED`를 활성화합니다. 일반 UNO R3의 SDA/SCL은 A4/A5이지만 사용 중인 호환보드의 핀을 확인해야 합니다.
 - LCD 1행은 `SEL:LIGHT`처럼 선택 장치, 2행은 `CMD:ON`, `CMD:OFF`, `CMD:--`를 표시합니다. CURTAIN의 ON/OFF는 OPEN/CLOSE 명령 상태입니다. 센서 피드백이 없으므로 이 값은 실제 동작·위치가 아니라 **마지막 처리 명령 상태**이며 초기 상태를 모르면 --로 표시합니다.
 - PC는 선택 정보를 1초마다 Arduino에 전송합니다. 약 3초 동안 갱신되지 않으면 선택을 해제하고 LCD에 NONE을 표시합니다. 연결이 끊겨도 기존 출력은 유지되며 물리적 자동 정지는 구현되지 않았습니다.

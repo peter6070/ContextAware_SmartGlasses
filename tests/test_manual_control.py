@@ -31,6 +31,7 @@ class ManualControlTests(unittest.TestCase):
         serial = FakeSerial()
         service = ArduinoService(lambda *event: events.put(event), lambda *a, **k: serial, lambda _: None)
         service.submit('connect', 'COM_TEST')
+        self.assertIn('연결 중', events.get(timeout=2)[1])
         self.assertEqual(events.get(timeout=2), ('arduino', 'COM_TEST 연결됨'))
         service.submit('command', 'FAN', 'FAN,START')
         self.assertIn('FAN,START', events.get(timeout=2)[1])
@@ -45,6 +46,19 @@ class ManualControlTests(unittest.TestCase):
         service = ArduinoService(lambda *event: events.put(event))
         service.submit('command', 'LIGHT', 'LIGHT,ON')
         self.assertIn('먼저 Arduino', events.get(timeout=2)[1])
+        service.submit('stop')
+        service.worker.join(timeout=2)
+
+    def test_connection_without_response_reports_failure_and_closes(self):
+        events = queue.Queue()
+        serial = FakeSerial()
+        serial.readline = lambda: b''
+        service = ArduinoService(lambda *event: events.put(event), lambda *a, **k: serial, lambda _: None)
+        service.submit('connect', 'COM_TEST')
+        received = [events.get(timeout=2) for _ in range(4)]
+        self.assertTrue(any(kind == 'arduino' and '연결 실패' in value for kind, value in received))
+        self.assertTrue(any('응답하지 않습니다' in value for _, value in received))
+        self.assertTrue(serial.closed)
         service.submit('stop')
         service.worker.join(timeout=2)
 

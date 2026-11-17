@@ -7,6 +7,7 @@ import { FabricAuthority } from '@matter/main/protocol';
 import { OnOffClient } from '@matter/main/behaviors/on-off';
 import { GeneralCommissioning } from '@matter/main/clusters';
 import '@matter/nodejs-ble';
+import { safeMatterError } from './errors.mjs';
 
 // 설정 코드·네트워크 정보가 SDK 진단 로그에 출력되지 않도록 합니다.
 Logger.level = LogLevel.FATAL;
@@ -69,7 +70,7 @@ try {
       console.log(JSON.stringify({ ok: true, result }));
     } catch (error) {
       // SDK 예외에는 인증 정보가 포함될 수 있어 원문을 출력하지 않습니다.
-      console.log(JSON.stringify({ ok: false, error: 'Matter 요청 실패. 기기 연결과 설정을 확인하세요.' }));
+      console.log(JSON.stringify({ ok: false, error: safeMatterError(error) }));
     }
   }
 } catch (error) {

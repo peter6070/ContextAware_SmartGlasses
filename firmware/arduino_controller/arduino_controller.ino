@@ -1,31 +1,34 @@
 // 실제 배선과 부품 사양을 확인한 출력만 활성화합니다.
-#include <Servo.h>
 #include <Wire.h>
+#include <Servo.h>
 #include <hd44780.h>
 #include <hd44780ioClass/hd44780_I2Cexp.h>
 
 // 모든 값은 확인 전 제안입니다. 모터 핀에는 구동 회로의 제어 입력만 연결합니다.
-constexpr bool OUTPUTS_CONFIRMED = false;
-constexpr bool FAN_DRIVER_CONFIRMED = false;
-constexpr bool LCD_CONFIRMED = false;
-constexpr bool RGB_ACTIVE_HIGH = true;
-constexpr bool FAN_ACTIVE_HIGH = true;
-constexpr int RED_PIN = 3;
-constexpr int GREEN_PIN = 5;
-constexpr int BLUE_PIN = 6;
+constexpr bool OUTPUTS_CONFIRMED = true;
+constexpr bool FAN_DRIVER_CONFIRMED = true;
+constexpr bool LCD_CONFIRMED = true;
+constexpr bool LIGHT_ACTIVE_HIGH = true;
+constexpr int LIGHT_PIN = 3;
 constexpr int SERVO_PIN = 9;
-constexpr int FAN_PIN = 8;
+constexpr int FAN_STEPPER_PINS[] = {10, 11, 12, 13}; // IN1, IN2, IN3, IN4
+// 실제 서보와 커튼 기구의 안전한 범위를 확인한 후 조정합니다.
 constexpr int CURTAIN_CLOSED_ANGLE = 0;
 constexpr int CURTAIN_OPEN_ANGLE = 90;
+constexpr unsigned long STEPPER_INTERVAL_MS = 3;
 // 16x2 HD44780 호환 I2C LCD를 가정한 설정이며 실제 모델 확인이 필요합니다.
 constexpr int LCD_COLUMNS = 16;
 constexpr int LCD_ROWS = 2;
 constexpr unsigned long SELECTION_TIMEOUT_MS = 3000;
 
-Servo curtain;
 hd44780_I2Cexp lcd;
+Servo curtain;
 bool lcdReady = false;
 bool servoAttached = false;
+bool fanRunning = false;
+int stepIndex = 0;
+unsigned long lastStep = 0;
+const byte stepSequence[8] = {0b0001, 0b0011, 0b0010, 0b0110, 0b0100, 0b1100, 0b1000, 0b1001};
 enum Device { NONE, LIGHT, CURTAIN, FAN };
 enum State { UNKNOWN, OFF, ON };
 Device selected = NONE;
@@ -59,17 +62,53 @@ void displayStatus() {
 }
 
 void setLight(bool on) {
-  int level = (on == RGB_ACTIVE_HIGH) ? HIGH : LOW;
-  digitalWrite(RED_PIN, level);
-  digitalWrite(GREEN_PIN, level);
-  digitalWrite(BLUE_PIN, level);
+  digitalWrite(LIGHT_PIN, (on == LIGHT_ACTIVE_HIGH) ? HIGH : LOW);
+}
+
+void updateFan() {
+  if (!FAN_DRIVER_CONFIRMED || !fanRunning || millis() - lastStep < STEPPER_INTERVAL_MS) return;
+  lastStep = millis();
+  stepIndex = (stepIndex + 1) % 8;
+  for (int i = 0; i < 4; ++i) digitalWrite(FAN_STEPPER_PINS[i], (stepSequence[stepIndex] >> i) & 1);
 }
 
 void setFan(bool on) {
-  digitalWrite(FAN_PIN, (on == FAN_ACTIVE_HIGH) ? HIGH : LOW);
+  fanRunning = on;
+  if (!on) for (int i = 0; i < 4; ++i) digitalWrite(FAN_STEPPER_PINS[i], LOW);
+}
+
+bool scanI2c(bool report) {
+  bool found = false;
+  if (report) Serial.print("I2C");
+  for (byte address = 8; address < 120; ++address) {
+    Wire.beginTransmission(address);
+    if (Wire.endTransmission() == 0) {
+      found = true;
+      if (report) {
+        Serial.print(',');
+        if (address < 16) Serial.print('0');
+        Serial.print(address, HEX);
+      }
+    }
+    if (Wire.getWireTimeoutFlag()) {
+      Wire.clearWireTimeoutFlag();
+      if (report) Serial.print(",BUS_TIMEOUT");
+      break;
+    }
+  }
+  if (report) Serial.println();
+  return found;
 }
 
 void processCommand(const char* cmd) {
+  if (strcmp(cmd, "DIAG,LCD") == 0) {
+    Serial.println(lcdReady ? "LCD,READY" : "LCD,NOT_READY");
+    return;
+  }
+  if (strcmp(cmd, "DIAG,I2C") == 0) {
+    scanI2c(true);
+    return;
+  }
   if (strncmp(cmd, "SELECT,", 7) == 0) {
     const char* name = cmd + 7;
     Device next;
@@ -112,16 +151,17 @@ void processCommand(const char* cmd) {
   if (target == LIGHT) setLight(on);
   else if (target == FAN) setFan(on);
   else {
+    int angle = on ? CURTAIN_OPEN_ANGLE : CURTAIN_CLOSED_ANGLE;
     if (!servoAttached) {
-      // attach 전에 목표를 지정해 라이브러리 기본 각도로 움직이는 것을 방지합니다.
-      curtain.write(on ? CURTAIN_OPEN_ANGLE : CURTAIN_CLOSED_ANGLE);
+      // attach 전에 목표를 설정해 기본 각도로 먼저 움직이지 않도록 합니다.
+      curtain.write(angle);
       if (curtain.attach(SERVO_PIN) == INVALID_SERVO) {
         Serial.println("ERR,SERVO_ATTACH");
         return;
       }
       servoAttached = true;
     } else {
-      curtain.write(on ? CURTAIN_OPEN_ANGLE : CURTAIN_CLOSED_ANGLE);
+      curtain.write(angle);
     }
   }
   states[target] = on ? ON : OFF;
@@ -131,19 +171,20 @@ void processCommand(const char* cmd) {
 
 void setup() {
   Serial.begin(115200);
+  Wire.begin();
+  // 배선 오류로 I2C 버스가 응답하지 않아도 무한 대기하지 않도록 합니다.
+  Wire.setWireTimeout(25000, true);
   if (OUTPUTS_CONFIRMED) {
     setLight(false);
-    pinMode(RED_PIN, OUTPUT);
-    pinMode(GREEN_PIN, OUTPUT);
-    pinMode(BLUE_PIN, OUTPUT);
+    pinMode(LIGHT_PIN, OUTPUT);
     states[LIGHT] = OFF;
   }
   if (FAN_DRIVER_CONFIRMED) {
     setFan(false);
-    pinMode(FAN_PIN, OUTPUT);
+    for (int i = 0; i < 4; ++i) pinMode(FAN_STEPPER_PINS[i], OUTPUT);
     states[FAN] = OFF;
   }
-  if (LCD_CONFIRMED) {
+  if (LCD_CONFIRMED && scanI2c(false)) {
     int status = lcd.begin(LCD_COLUMNS, LCD_ROWS);
     lcdReady = (status == 0);
     if (lcdReady) {
@@ -154,6 +195,7 @@ void setup() {
 }
 
 void loop() {
+  updateFan();
   while (Serial.available()) {
     char c = static_cast<char>(Serial.read());
     if (c == '\r') continue;

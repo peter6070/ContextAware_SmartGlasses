@@ -48,6 +48,7 @@ class ArduinoService:
                     return
                 if action == 'connect':
                     self._disconnect()
+                    self.emit('arduino', f'{args[0]} 연결 중…')
                     if self.serial_factory is None:
                         import serial
                         self.serial_factory = serial.Serial
@@ -81,6 +82,12 @@ class ArduinoService:
                 self.emit('log', str(error))
                 if action == 'stop':
                     return
+                if action == 'connect':
+                    self._disconnect()
+                    self.emit('arduino', '연결 실패 — 아래 처리 결과 확인')
+                    if isinstance(error, TimeoutError):
+                        self.emit('log', '포트는 열렸지만 UNO가 응답하지 않습니다. 올바른 스케치를 업로드했는지 확인하세요.')
+                    continue
                 # 응답 유실 또는 끊김은 후속 응답이 섞일 수 있으므로 재연결이 필요합니다.
                 if isinstance(error, OSError):
                     self._disconnect()
@@ -181,7 +188,7 @@ class ManualControlApp:
         ttk.Button(line, text='연결 해제', command=lambda: self.arduino.submit('disconnect')).pack(side='left')
         ttk.Label(arduino, textvariable=self.arduino_status).pack(anchor='w', pady=(6, 0))
 
-        controls = ttk.LabelFrame(frame, text='LED · 서보 · DC 모터', padding=10)
+        controls = ttk.LabelFrame(frame, text='LED · 커튼 서보 · 팬 스텝모터', padding=10)
         controls.pack(fill='x', pady=4)
         for label, device, on_label, on_cmd, off_label, off_cmd in [
             ('조명', 'LIGHT', '켜기', 'LIGHT,ON', '끄기', 'LIGHT,OFF'),
@@ -222,6 +229,10 @@ class ManualControlApp:
             self.ports['values'] = ports
             if len(ports) == 1:
                 self.port.set(ports[0])
+            elif len(ports) > 1:
+                detected = [p.device for p in list_ports.comports() if p.vid in (0x2341, 0x2A03)]
+                if len(detected) == 1:
+                    self.port.set(detected[0])
         except ImportError:
             self.emit('log', 'pyserial이 설치되지 않았습니다.')
 
