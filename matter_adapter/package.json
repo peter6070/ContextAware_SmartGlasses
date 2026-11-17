@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@matter/main": "0.18.0",
+    "@matter/nodejs-ble": "0.18.0"
+  }
+}
