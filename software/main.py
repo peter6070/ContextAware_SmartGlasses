@@ -12,13 +12,13 @@ from software.gesture_recognizer import GestureRecognizer
 from software.gesture_state_machine import GestureStateMachine
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description="마커 선택과 손 제스처를 시험합니다.")
     parser.add_argument("--stream", required=True, help="ESP32-CAM MJPEG 스트림 URL")
     parser.add_argument("--model", required=True, help="MediaPipe hand_landmarker.task 경로")
     parser.add_argument("--serial", help="Arduino 포트. 생략하면 명령만 출력")
     parser.add_argument("--matter-device", help="등록된 Matter 장치 ID")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     connection = capture = recognizer = controller = matter = None
     link_ok = True
     try:
@@ -39,6 +39,7 @@ def main():
         recognizer = GestureRecognizer(args.model)
         selector = DeviceSelector(MARKER_DEVICE_MAP)
         state = GestureStateMachine()
+        active_devices = set()
         previous = None
         last_selection_sent = time.monotonic()
         while True:
@@ -74,14 +75,18 @@ def main():
                         print('Matter:', status, result, flush=True)
                 except queue.Empty:
                     pass
-            command = route(selected, action)
+            command = route(selected, "TOGGLE", selected in active_devices) if action == "ACTIVATE" else None
             if command:
                 print(command, flush=True)
+                acknowledged = controller is None
                 if controller:
                     try:
-                        print("Arduino:", controller.send(command), flush=True)
+                        print(f"Arduino: {command} -> {controller.send(command)}", flush=True)
+                        acknowledged = True
                     except RuntimeError as error:
                         print(error, flush=True)
+                if acknowledged:
+                    active_devices.symmetric_difference_update({selected})
             cv2.putText(frame, f"Device: {selected or '-'}  Hand: {pose or '-'}", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
             cv2.imshow("Smart Glasses - Q to exit", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):

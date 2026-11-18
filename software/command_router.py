@@ -6,5 +6,7 @@ COMMANDS = {
 }
 
 
-def route(device, action):
+def route(device, action, active=False):
+    if action == "TOGGLE":
+        action = "DEACTIVATE" if active else "ACTIVATE"
     return COMMANDS.get(device, {}).get(action)

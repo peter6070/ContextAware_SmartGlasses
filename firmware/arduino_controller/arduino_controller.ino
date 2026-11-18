@@ -15,7 +15,7 @@ constexpr int FAN_STEPPER_PINS[] = {10, 11, 12, 13}; // IN1, IN2, IN3, IN4
 // 실제 서보와 커튼 기구의 안전한 범위를 확인한 후 조정합니다.
 constexpr int CURTAIN_CLOSED_ANGLE = 0;
 constexpr int CURTAIN_OPEN_ANGLE = 90;
-constexpr unsigned long STEPPER_INTERVAL_MS = 3;
+constexpr unsigned long STEPPER_INTERVAL_MS = 2;
 // 16x2 HD44780 호환 I2C LCD를 가정한 설정이며 실제 모델 확인이 필요합니다.
 constexpr int LCD_COLUMNS = 16;
 constexpr int LCD_ROWS = 2;

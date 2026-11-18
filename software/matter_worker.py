@@ -31,6 +31,9 @@ class MatterWorker:
             if op is None:
                 break
             try:
+                if self.controller.closed:
+                    self.controller.close()
+                    self.controller = MatterController()
                 result = self.controller.request(op, id=self.device_id)
                 self.results.put(('ok', result))
             except (OSError, RuntimeError, TimeoutError) as error:

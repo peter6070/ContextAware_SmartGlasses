@@ -20,22 +20,22 @@ python -m software.main --help
 
 프로젝트 루트에서 `python -m software.manual_control`을 실행합니다. Arduino 포트를 검색해 연결하면 조명 켜기·끄기, 커튼 열기·닫기, 팬 시작·정지를 누를 수 있습니다. LCD의 표시 장치는 별도 버튼으로 선택합니다. LCD는 선택된 장치와 마지막 명령을 표시하며 임의의 문자 입력이나 실제 작동 감지는 지원하지 않습니다.
 
-Matter 영역에서 등록된 기기를 조회하고 켜기·끄기를 요청하거나, 새 기기 등록 화면에서 설정 코드와 Wi-Fi 정보를 직접 입력할 수 있습니다. 최초 등록에는 Node.js 의존성과 Bluetooth가 필요하며, 플러그가 응답하지 않으면 오류가 표시됩니다. Matter의 표시 상태는 캐시이며 실제 상태를 보장하지 않습니다. Arduino 출력과 LCD는 배선·부품 확인 전 펌웨어에서 기본 비활성화되어 있습니다. 실제 보드 및 플러그 연결 시험은 아직 하지 않았습니다.
+Matter 영역에서 등록된 기기를 조회하고 켜기·끄기를 요청하거나, 새 기기 등록 화면에서 설정 코드와 Wi-Fi 정보를 직접 입력할 수 있습니다. 최초 등록에는 Node.js 의존성과 Bluetooth가 필요합니다. 등록이 진행되면 처리 결과에 기기 검색, 인증, Wi-Fi 연결 및 로컬 네트워크 재연결 단계가 표시됩니다. 켜기·끄기 또는 상태 버튼을 누르면 Matter 기기에 전원 상태를 직접 조회합니다. Arduino 출력과 LCD는 배선·부품 확인 전 펌웨어에서 기본 비활성화되어 있습니다. 실제 보드 및 플러그 연결 시험은 아직 하지 않았습니다.
 
 노트북에서 헤이홈 플러그 Air를 앱이나 별도 스마트홈 허브 없이 직접 제어하는 기능은 [Matter 통합 계획](docs/matter_integration_plan.md)에 설계되어 있습니다. 등록·제어 시제품을 작성했으며 실장치 등록과 네트워크 이동은 아직 검증하지 않았습니다.
 
 ## PC 인식 시제품
 
-PC에서 OpenCV ArUco DICT_4X4_50 마커를 검출해 1초 안정적으로 보인 화면 중심 장치를 선택합니다. 마커가 사라지면 2초간 선택을 유지합니다. 선택 후 주먹→손바닥은 활성화, 손바닥→주먹은 비활성화 명령입니다. 임계값은 임시값이며 실제 영상에서 검증하지 않았습니다. 핀치 조절은 아직 구현되지 않았습니다.
+PC에서 OpenCV ArUco DICT_4X4_50 마커를 검출해 1초 안정적으로 보인 화면 중심 장치를 선택합니다. 마커가 사라지면 2초간 선택을 유지합니다. 조명·커튼·팬은 주먹→손바닥을 할 때마다 활성화와 비활성화를 번갈아 실행합니다. 손바닥→주먹으로 다음 동작을 준비합니다. 임계값은 실측 전 임시값입니다. 핀치 조절은 아직 구현되지 않았습니다.
 
 MediaPipe Hand Landmarker의 호환되는 모델 파일을 준비한 뒤 다음과 같이 실행합니다. 스트림은 MJPEG URL입니다. 실제 주소와 경로로 바꾸세요.
 ```powershell
 python -m software.main --stream http://<ESP32주소>:81/stream --model <모델파일경로>
 ```
-기본적으로 명령은 출력만 합니다. `--serial COM포트`를 추가하면 115200 baud로 줄바꿈 명령을 보냅니다. Arduino 수신 및 조명·커튼 서보·팬 스텝모터 제어 코드는 작성했으나 변경된 코드의 실장치 동작은 검증 전입니다. ESP32 영상 코드도 후보 핀 배치를 사용하므로 보드 확인이 필요합니다.
+기본적으로 명령은 출력만 합니다. `--serial COM포트`를 추가하면 115200 baud로 줄바꿈 명령을 보냅니다. Arduino 수신 및 조명·커튼 서보·팬 스텝모터 제어 코드는 작성했으나 변경된 코드의 실장치 동작은 검증 전입니다.
 
 ## 하드웨어 시제품 설정
-보내주신 상품과 동일한 보드인지 아직 확인되지 않았습니다. ESP32 코드는 [Freenove ESP32-S3 WROOM 카메라 예제](https://github.com/Freenove/Freenove_ESP32_S3_WROOM_Board/blob/main/C/Sketches/Sketch_07.2_As_VideoWebServer/Sketch_07.2_As_VideoWebServer.ino)의 ESP32S3_EYE 핀 배치를 후보로 사용합니다. 실제 보드가 일치하는지 확인한 후 `firmware/esp32_cam/wifi_secrets.example.h`를 같은 폴더에 `wifi_secrets.h`로 복사하고 Wi-Fi 정보를 입력한 뒤 확인 매크로의 주석을 해제합니다. ESP32-S3용 Arduino 보드 패키지와 보드에 맞는 설정이 필요합니다. 업로드 후 시리얼 모니터 115200 baud에서 출력된 스트림 주소를 PC에 입력합니다. 인증 정보 파일은 Git에서 제외됩니다.
+스마트글래스에 쓰는 ESP32-S3-N16R8과 OV2640은 [ESP-IDF 카메라 펌웨어 업로드 안내](docs/esp32_idf_upload.md)를 따릅니다. ESP32 보드의 USB-UART에 연결해 올린 뒤, 시리얼 모니터에 출력된 스트림 주소를 PC 프로그램에 입력합니다.
 
 초록색 LED는 D3, 팬용 28BYJ-48 스텝모터 드라이버의 IN1~IN4는 D10~D13에 연결했습니다. 커튼 서보 신호는 D9로 계획하며 실제 배선은 확인이 필요합니다. LED 극성과 전류 제한, 모터 전원과 공통 접지는 실물 확인이 필요합니다. `LIGHT_ACTIVE_HIGH`와 서보의 열림·닫힘 각도는 시험용 설정입니다. 서보를 기구에 연결하기 전 방향과 이동 범위를 확인하세요.
 
@@ -56,6 +56,6 @@ python -m software.matter_setup register
 python -m software.matter_setup list
 ```
 
-코드와 Wi-Fi 비밀번호는 프롬프트에 직접 입력합니다. 명령행 인자나 채팅에 입력하지 마세요. 등록이 성공하면 표시되는 장치 ID를 사용하여 기존 실행 명령에 `--matter-device 장치ID`를 추가합니다. [마커 4](assets/aruco_markers/marker_4.png)를 인식해 선택한 뒤 주먹→손바닥은 켜기, 반대 전환은 끄기입니다. `python -m software.matter_setup status --device 장치ID`로 상태를 요청할 수 있으나 현재 상태값은 캐시이며 실시간 확인을 보장하지 않습니다.
+코드와 Wi-Fi 비밀번호는 프롬프트에 직접 입력합니다. 명령행 인자나 채팅에 입력하지 마세요. 등록이 성공하면 표시되는 장치 ID를 사용하여 기존 실행 명령에 `--matter-device 장치ID`를 추가합니다. [마커 4](assets/aruco_markers/marker_4.png)를 인식해 선택한 뒤 주먹→손바닥은 켜기, 반대 전환은 끄기입니다. `python -m software.matter_setup status --device 장치ID`는 기기의 현재 On/Off 값을 읽습니다.
 
 Windows BLE 및 실제 플러그 등록, 기기 On/Off, 네트워크 변경·공공망·핫스팟, LCD Matter 표시는 아직 검증하거나 완성하지 않았습니다. 네트워크 장애 시 제어가 실패할 수 있습니다. 이미 전송된 명령은 선택이 바뀌어도 취소할 수 없습니다.

@@ -15,7 +15,7 @@ def main():
             code = getpass.getpass('Matter 숫자 코드: ').strip().replace('-', '')
             ssid = input('플러그가 연결될 Wi-Fi 이름: ').strip()
             password = getpass.getpass('Wi-Fi 비밀번호: ')
-            result = controller.request('commission', timeout=180, code=code, ssid=ssid, password=password)
+            result = controller.commission(code, ssid, password, on_progress=lambda stage: print(stage, flush=True))
             print('등록 완료. 장치 ID:', result['id'])
         elif args.command == 'list':
             for device in controller.request('list')['devices']:

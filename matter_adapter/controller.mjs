@@ -1,20 +1,39 @@
 // 로컬 표준 입출력으로만 요청을 받는 Matter 컨트롤러 시제품입니다.
 import { createInterface } from 'node:readline';
 import { resolve } from 'node:path';
-import { Environment, Logger, LogLevel } from '@matter/main';
+import { Environment, Logger, LogLevel, Seconds } from '@matter/main';
 import { ControllerBehavior, ServerNode } from '@matter/main';
 import { FabricAuthority } from '@matter/main/protocol';
 import { OnOffClient } from '@matter/main/behaviors/on-off';
 import { GeneralCommissioning } from '@matter/main/clusters';
+import { ManualPairingCodeCodec } from '@matter/main/types';
 import '@matter/nodejs-ble';
 import { safeMatterError } from './errors.mjs';
 
-// 설정 코드·네트워크 정보가 SDK 진단 로그에 출력되지 않도록 합니다.
+// SDK 원문 대신 알려진 단계에 대한 고정 문구만 표준 출력으로 보냅니다.
 Logger.level = LogLevel.FATAL;
+const commissioningStages = new Map([
+  ['GetInitialData', '보안 등록 연결 성립. 기기 정보 확인 중'],
+  ['OperationalCredentials.DeviceAttestation', 'Matter 기기 인증 중'],
+  ['NetworkCommissioning.Wifi', '플러그에 Wi-Fi 정보를 전달하고 연결 확인 중'],
+  ['Reconnect', '로컬 IP 네트워크에서 플러그에 다시 연결 중'],
+  ['GeneralCommissioning.Complete', 'Matter 등록 마무리 중'],
+]);
+let commissioning = false;
+Logger.facilityLevels = { ControllerCommissioner: LogLevel.INFO };
+Logger.destinations.default.write = (text) => {
+  if (!commissioning) return;
+  const step = text.match(/Executing commissioning step \d+\.\d+: ([\w.]+)/)?.[1];
+  const message = commissioningStages.get(step);
+  if (message) console.log(JSON.stringify({ progress: message }));
+};
 const env = Environment.default;
 env.vars.set('ble.enable', true);
 env.vars.set('storage.path', resolve(process.env.LOCALAPPDATA || process.env.HOME || '.', 'SmartGlassesMatter'));
 let controller;
+class InvalidRegistrationError extends Error {}
+class DeviceNotReadyError extends Error {}
+class OnOffEndpointError extends Error {}
 
 async function init() {
   controller = await ServerNode.create(ServerNode.RootEndpointWithoutGroupcast.with(ControllerBehavior), {
@@ -33,30 +52,44 @@ function peerList() {
 async function execute(request) {
   if (request.op === 'list') return { devices: peerList() };
   if (request.op === 'commission') {
-    if (!/^\d{11,21}$/.test(request.code || '') || !request.ssid || typeof request.password !== 'string') {
-      throw new Error('등록 코드와 Wi-Fi 정보를 확인하세요.');
+    if (typeof request.code !== 'string' || !/^(\d{11}|\d{21})$/.test(request.code) ||
+        typeof request.ssid !== 'string' || !request.ssid || Buffer.byteLength(request.ssid) > 32 ||
+        typeof request.password !== 'string') {
+      throw new InvalidRegistrationError();
     }
-    const peer = await controller.peers.commission({
-      pairingCode: request.code,
-      discoveryCapabilities: { ble: true, onIpNetwork: true },
-      wifiNetwork: { wifiSsid: request.ssid, wifiCredentials: request.password },
-      regulatoryLocation: GeneralCommissioning.RegulatoryLocationType.IndoorOutdoor,
-      regulatoryCountryCode: 'KR',
-      onAttestationFailure: findings => findings.every(f => f.level !== 'error'),
-    });
-    return { id: peer.id };
+    let pairing;
+    try {
+      pairing = ManualPairingCodeCodec.decode(request.code);
+    } catch {
+      throw new InvalidRegistrationError();
+    }
+    commissioning = true;
+    try {
+      console.log(JSON.stringify({ progress: '등록 대기 기기 검색 중 (BLE 및 로컬 네트워크)' }));
+      const peer = await controller.peers.commission({
+        ...pairing,
+        timeout: Seconds(60),
+        discoveryCapabilities: { ble: true, onIpNetwork: true },
+        wifiNetwork: { wifiSsid: request.ssid, wifiCredentials: request.password },
+        regulatoryLocation: GeneralCommissioning.RegulatoryLocationType.IndoorOutdoor,
+        regulatoryCountryCode: 'KR',
+        onAttestationFailure: findings => findings.every(f => f.level !== 'error'),
+      });
+      return { id: peer.id };
+    } finally {
+      commissioning = false;
+    }
   }
   if (!['status', 'on', 'off'].includes(request.op)) throw new Error('지원하지 않는 요청입니다.');
   const peer = [...controller.peers.commissioned].find(p => p.id === request.id);
-  if (!peer || !peer.lifecycle.isConnected || !peer.lifecycle.isSeeded) throw new Error('장치가 연결되지 않았거나 아직 준비되지 않았습니다.');
+  if (!peer || !peer.lifecycle.isConnected || !peer.lifecycle.isSeeded) throw new DeviceNotReadyError();
   const candidates = [...peer.endpoints].filter(endpoint => endpoint.behaviors.has(OnOffClient));
-  if (candidates.length !== 1) throw new Error('On/Off 엔드포인트가 하나가 아닙니다. 장치 설정 확인이 필요합니다.');
+  if (candidates.length !== 1) throw new OnOffEndpointError();
   const endpoint = candidates[0];
   if (request.op === 'on') await endpoint.commandsOf(OnOffClient).on();
   if (request.op === 'off') await endpoint.commandsOf(OnOffClient).off();
-  // 로컬 캐시는 구독 시점의 값이므로 명령 성공과 실제 상태를 혼동하지 않습니다.
-  const state = endpoint.stateOf(OnOffClient).onOff;
-  return { endpoint: endpoint.number, cachedState: state, confirmed: false };
+  const { onOff } = await endpoint.getStateOf(OnOffClient, ['onOff'], { includeKnownVersions: true });
+  return { endpoint: endpoint.number, onOff: typeof onOff === 'boolean' ? onOff : null };
 }
 
 try {
@@ -74,7 +107,7 @@ try {
     }
   }
 } catch (error) {
-  console.error('Matter 컨트롤러 초기화 실패. Node.js, Bluetooth 및 네트워크 환경을 확인하세요.');
+  console.log(JSON.stringify({ ready: false, error: safeMatterError(error) }));
   process.exitCode = 1;
 } finally {
   if (controller) await controller.close();

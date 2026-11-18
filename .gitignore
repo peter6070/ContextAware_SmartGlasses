@@ -18,6 +18,10 @@ dist/
 
 # Wi-Fi 인증 정보
 firmware/esp32_cam/wifi_secrets.h
+firmware/esp32_cam_idf/main/wifi_secrets.h
+firmware/esp32_cam_idf/sdkconfig
+firmware/esp32_cam_idf/sdkconfig.old
+firmware/esp32_cam_idf/managed_components/
 
 # Node.js 의존성과 Matter 자격 증명
 node_modules/

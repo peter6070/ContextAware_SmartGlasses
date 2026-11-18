@@ -121,18 +121,21 @@ class MatterService:
                 if action == 'stop':
                     return
                 try:
-                    if controller is None:
+                    if controller is None or controller.closed:
+                        if controller is not None:
+                            controller.close()
                         controller = MatterController()
                     if action == 'register':
                         code, ssid, password = args
-                        result = controller.request('commission', timeout=180, code=code, ssid=ssid, password=password)
+                        result = controller.commission(code, ssid, password, on_progress=lambda stage: self.emit('log', stage))
                         self.emit('log', f'Matter 등록 완료: {result["id"]}')
                         action = 'list'
                     if action == 'list':
                         self.emit('devices', controller.request('list')['devices'])
                     elif action in ('on', 'off', 'status'):
                         result = controller.request(action, id=args[0])
-                        self.emit('log', f'Matter {action}: 요청 처리됨. 캐시 상태: {result.get("cachedState")} (실제 상태 미확인)')
+                        state = {True: '켜짐', False: '꺼짐', None: '확인 불가'}[result.get('onOff')]
+                        self.emit('log', f'Matter 플러그 상태 — {state}')
                 except (OSError, RuntimeError, ValueError) as error:
                     self.emit('log', f'Matter 오류: {error}')
                     if isinstance(error, OSError) and controller:
